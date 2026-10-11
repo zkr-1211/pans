@@ -414,7 +414,7 @@ async function searchApi(site, kw, seq) {
   setState(site.id, '', '搜索中');
   body.innerHTML = `<div class="loading">正在聚合各来源</div>`;
   const ctrl = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), 20000);
+  const timer = setTimeout(() => ctrl.abort(), 45000);
   const t0 = Date.now();
   try {
     const res = await fetch(site.fetch(kw), { signal: ctrl.signal });
