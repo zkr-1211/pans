@@ -1,0 +1,729 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>聚合盘搜 - 一次输入，多站同搜</title>
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#2563eb">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="聚合盘搜">
+<style>
+  :root {
+    --bg: #f3f4f6; --card: #ffffff; --line: #e5e7eb; --text: #111827;
+    --muted: #6b7280; --accent: #2563eb; --accent-2: #eff6ff;
+    --ok: #16a34a; --fail: #dc2626; --chip: #f3f4f6;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif; background: var(--bg); color: var(--text); font-size: 14px; }
+
+  header { position: sticky; top: 0; z-index: 10; background: var(--card); border-bottom: 1px solid var(--line); padding: 10px 16px 8px; }
+  .top { display: flex; align-items: center; gap: 12px; max-width: 1800px; margin: 0 auto; }
+  .logo { font-weight: 700; font-size: 17px; white-space: nowrap; }
+  .logo em { font-style: normal; color: var(--accent); }
+  #srcBtn { display: none; }
+  .searchbar { flex: 1; display: flex; gap: 8px; min-width: 220px; }
+  #kw { flex: 1; height: 40px; padding: 0 14px; font-size: 15px; border: 1px solid var(--line); border-radius: 10px; outline: none; background: #fafafa; }
+  #kw:focus { border-color: var(--accent); background: #fff; box-shadow: 0 0 0 3px var(--accent-2); }
+  #go { height: 40px; padding: 0 22px; font-size: 15px; font-weight: 600; color: #fff; background: var(--accent); border: 0; border-radius: 10px; cursor: pointer; }
+  #go:disabled { opacity: .5; cursor: default; }
+
+  .sub { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; max-width: 1800px; margin: 8px auto 0; }
+  .sub .tag { color: var(--muted); font-size: 12px; }
+  .chip { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border: 1px solid var(--line); border-radius: 999px; background: var(--chip); cursor: pointer; user-select: none; font-size: 12.5px; color: var(--text); }
+  .chip input { accent-color: var(--accent); }
+  .chip.on { background: var(--accent-2); border-color: #bfdbfe; color: var(--accent); }
+  .hist { padding: 3px 9px; border-radius: 999px; background: #fff; border: 1px dashed var(--line); color: var(--muted); cursor: pointer; font-size: 12px; }
+  .hist:hover { color: var(--accent); border-color: var(--accent); }
+
+  main { max-width: 1800px; margin: 0 auto; padding: 12px 16px 24px; display: grid; grid-template-columns: repeat(auto-fit, minmax(400px, 1fr)); gap: 12px; }
+
+  .panel { display: flex; flex-direction: column; background: var(--card); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; height: calc(100vh - 170px); min-height: 460px; }
+  .panel.auto { height: auto; min-height: 0; }
+  .p-head { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-bottom: 1px solid var(--line); background: #fafafa; }
+  .p-name { font-weight: 600; }
+  .p-state { font-size: 12px; color: var(--muted); flex: 1; min-width: 40px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .p-state.ok { color: var(--ok); }
+  .p-state.fail { color: var(--fail); }
+  .p-act { font-size: 12px; color: var(--accent); text-decoration: none; border: 1px solid var(--line); border-radius: 6px; padding: 2px 8px; background: #fff; cursor: pointer; }
+  .p-act:hover { border-color: var(--accent); }
+  .p-body { flex: 1; overflow: auto; position: relative; }
+  .p-body iframe { width: 100%; height: 100%; border: 0; display: block; }
+
+  .loading { padding: 40px 0; text-align: center; color: var(--muted); }
+  .loading::after { content: "…"; animation: dots 1.2s infinite steps(4); }
+  @keyframes dots { 0% { content: ""; } 25% { content: "."; } 50% { content: ".."; } 75% { content: "..."; } }
+  .empty, .err { padding: 28px 16px; text-align: center; color: var(--muted); line-height: 2; }
+
+  .fbar { position: sticky; top: 0; z-index: 2; display: flex; flex-wrap: wrap; gap: 6px; padding: 8px 12px; background: #fff; border-bottom: 1px solid var(--line); }
+  .fchip { font-size: 12.5px; padding: 3px 10px; border-radius: 999px; border: 1px solid var(--line); background: #fff; cursor: pointer; color: #374151; user-select: none; }
+  .fchip em { font-style: normal; color: var(--muted); margin-left: 4px; font-size: 11.5px; }
+  .fchip:hover { border-color: var(--accent); color: var(--accent); }
+  .fchip.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .fchip.on em { color: rgba(255, 255, 255, .8); }
+
+  .group { padding: 10px 12px 2px; }
+  .g-head { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+  .g-name { font-weight: 600; font-size: 13px; color: var(--accent); }
+  .g-count { font-size: 12px; color: var(--muted); }
+  .item { border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; margin-bottom: 8px; background: #fff; }
+  .item:hover { border-color: #c7d2fe; box-shadow: 0 1px 6px rgba(37, 99, 235, .06); }
+  .i-title { font-size: 13.5px; line-height: 1.45; word-break: break-all; }
+  .i-meta { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 5px; font-size: 12px; color: var(--muted); }
+  .badge { background: var(--chip); border-radius: 5px; padding: 1px 6px; }
+  .pw { color: #b45309; background: #fffbeb; border-radius: 5px; padding: 1px 6px; }
+  .i-act { display: flex; gap: 8px; margin-top: 6px; }
+  .btn { font-size: 12px; padding: 3px 10px; border-radius: 6px; border: 1px solid var(--line); background: #fff; color: var(--text); cursor: pointer; text-decoration: none; }
+  .btn:hover { border-color: var(--accent); color: var(--accent); }
+  .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .btn.primary:hover { opacity: .9; color: #fff; }
+
+  .tabcard { padding: 18px 16px; color: var(--muted); line-height: 1.9; }
+  .tabcard .row { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+
+  #toast { position: fixed; left: 50%; bottom: 32px; transform: translateX(-50%); background: #111827; color: #fff; padding: 8px 18px; border-radius: 8px; font-size: 13px; opacity: 0; transition: opacity .2s; pointer-events: none; z-index: 99; }
+  #toast.show { opacity: .92; }
+
+  /* 添加站点弹窗 */
+  .chip.add { border-style: dashed; color: var(--muted); cursor: pointer; }
+  .chip.add:hover { border-color: var(--accent); color: var(--accent); }
+  .modal-mask { position: fixed; inset: 0; background: rgba(17, 24, 39, .45); display: flex; align-items: center; justify-content: center; z-index: 90; padding: 16px; }
+  .modal-mask[hidden] { display: none; }
+  .modal { width: 500px; max-width: 94vw; max-height: 86vh; overflow: auto; background: #fff; border-radius: 14px; padding: 16px 18px; box-shadow: 0 20px 60px rgba(0, 0, 0, .3); }
+  .modal h3 { font-size: 16px; margin-bottom: 4px; }
+  .modal label { display: block; font-size: 13px; color: var(--muted); margin: 12px 0 4px; }
+  .modal input, .modal select { width: 100%; height: 40px; padding: 0 10px; border: 1px solid var(--line); border-radius: 8px; font-size: 14px; background: #fafafa; outline: none; }
+  .modal input:focus, .modal select:focus { border-color: var(--accent); background: #fff; }
+  .modal .hint { font-size: 12px; color: var(--muted); line-height: 1.8; margin-top: 12px; background: #f9fafb; border-radius: 8px; padding: 8px 10px; }
+  .modal .row { display: flex; gap: 8px; margin-top: 16px; justify-content: flex-end; }
+  .modal .crow { display: flex; align-items: center; gap: 8px; padding: 8px 0; border-top: 1px dashed var(--line); font-size: 13px; }
+  .modal .crow .nm { flex: 1; word-break: break-all; }
+  .modal .crow .mode { color: var(--muted); font-size: 12px; white-space: nowrap; }
+
+  #mtabs { display: none; }
+
+  /* ===== 手机端：独立布局（数据源收起为下拉 + Tab 切换单面板）===== */
+  @media (max-width: 768px) {
+    header { padding: 10px 10px 8px; }
+    .top { flex-wrap: wrap; row-gap: 8px; }
+    .logo { font-size: 16px; }
+    #srcBtn {
+      display: inline-flex; align-items: center; height: 32px; padding: 0 12px; margin-left: auto;
+      border: 1px solid var(--line); border-radius: 8px; background: #fff;
+      font-size: 13px; color: var(--text); cursor: pointer;
+    }
+    #srcBtn.open { border-color: var(--accent); color: var(--accent); background: var(--accent-2); }
+    .searchbar { flex: 1 1 100%; }
+    #kw { height: 42px; font-size: 16px; }
+    #go { height: 42px; padding: 0 18px; }
+
+    /* 数据源设置：手机端收进下拉面板 */
+    .sub { display: none; }
+    .sub.open {
+      display: flex; flex-wrap: wrap; align-items: center; gap: 8px 6px;
+      position: absolute; top: calc(100% + 6px); left: 10px; right: 10px;
+      padding: 12px; background: #fff; border: 1px solid var(--line);
+      border-radius: 12px; box-shadow: 0 12px 32px rgba(17, 24, 39, .16); z-index: 30;
+    }
+    .sub .tag { flex-shrink: 0; }
+
+    #mtabs { display: flex; gap: 6px; max-width: 1800px; margin: 10px auto 0; overflow-x: auto; }
+    #mtabs::-webkit-scrollbar { display: none; }
+    #mtabs[hidden] { display: none !important; }
+    .mtab { flex: 0 0 auto; padding: 6px 14px; border-radius: 999px; border: 1px solid var(--line); background: #fff; font-size: 13px; color: var(--text); cursor: pointer; white-space: nowrap; }
+    .mtab.on { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; box-shadow: 0 2px 8px rgba(37, 99, 235, .3); }
+
+    main { display: block; padding: 8px 10px calc(16px + env(safe-area-inset-bottom, 0px)); }
+    .panel { display: none; height: calc(100dvh - 180px); min-height: 340px; margin: 0; }
+    .panel.m-active { display: flex; }
+    .panel.auto.m-active { height: auto; min-height: 0; }
+    .p-head { flex-wrap: wrap; }
+
+    /* 结果内筛选栏：手机端单行横滑，节省纵向空间 */
+    .fbar { flex-wrap: nowrap; overflow-x: auto; }
+    .fbar::-webkit-scrollbar { display: none; }
+    .fchip { flex: 0 0 auto; }
+
+    /* 添加站点弹窗:防 iOS 聚焦放大 */
+    .modal input, .modal select { font-size: 16px; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <div class="top">
+    <div class="logo">聚合<em>盘搜</em></div>
+    <button id="srcBtn" type="button">数据源</button>
+    <div class="searchbar">
+      <input id="kw" type="text" placeholder="输入一个关键词，所有网盘搜索引擎同时开搜（回车）" autocomplete="off">
+      <button id="go">搜索</button>
+    </div>
+  </div>
+  <div class="sub" id="srcPanel">
+    <span class="tag">数据源：</span>
+    <div id="toggles" style="display:contents"></div>
+    <span class="tag" id="hist-label" style="margin-left:8px; display:none">历史：</span>
+    <div id="hist" style="display:contents"></div>
+  </div>
+  <nav id="mtabs"></nav>
+</header>
+<main id="panels"></main>
+<div id="siteModal" class="modal-mask" hidden>
+  <div class="modal">
+    <h3>添加站点（动态聚合）</h3>
+    <label>站点名称</label>
+    <input id="msName" placeholder="例如：XX盘搜" autocomplete="off">
+    <label>搜索地址（关键词用 {kw} 占位）</label>
+    <input id="msUrl" placeholder="https://example.com/search?q={kw}" autocomplete="off">
+    <label>打开方式</label>
+    <select id="msMode">
+      <option value="iframe">嵌入面板（搜索结果直接显示在页面里）</option>
+      <option value="tab">新窗口打开（适合禁止被嵌入的站，打开时自动复制关键词）</option>
+    </select>
+    <div class="hint">用法：在目标网站里搜索一次，把地址栏里的网址贴到这里，把关键词换成 <b>{kw}</b> 即可。<br>如果嵌入后新面板一直空白，说明该站禁止被嵌入，改成「新窗口打开」保存即可。保存后站点会出现在上方「数据源」中，可随时开关。</div>
+    <div class="row">
+      <button class="btn" id="msTest" type="button">测试打开</button>
+      <button class="btn primary" id="msSave" type="button">保存</button>
+      <button class="btn" id="msCancel" type="button">取消</button>
+    </div>
+    <div id="msList"></div>
+  </div>
+</div>
+<div id="toast"></div>
+
+<script>
+// ===== 内置数据源配置（新站点不用改代码：页面里点「＋ 添加站点」即可，或在这里加一项）=====
+// mode: 'api'   = 原生接口（需服务端允许 CORS），页面内渲染卡片列表
+//       'iframe' = 用 URL 直链嵌入搜索结果页
+//       'tab'    = 禁止被嵌入的站，只能新窗口手动打开
+// 排序约定：免登录/限制少的在前 —— PanSou(原生) → 下歌吧/松果(免登录嵌入) → PanHub(拿链接需登录) → 盘友圈(需验证码)
+const SITES = [
+  {
+    id: 'pansou', name: '盘搜 PanSou', mode: 'api',
+    home: 'https://s.panhunt.com/',
+    fetch: kw => `https://s.panhunt.com/api/search?kw=${encodeURIComponent(kw)}&res=merge&src=all`,
+  },
+  {
+    id: 'xiageba', name: '下歌吧', mode: 'iframe',
+    home: 'https://so.liumingye.cn/',
+    url: kw => `https://so.liumingye.cn/search?type=resource&q=${encodeURIComponent(kw)}&exact=true`,
+  },
+  {
+    id: 'wpss', name: '松果盘搜', mode: 'iframe',
+    home: 'https://www.wpss.best/',
+    url: kw => `https://www.wpss.best/search?keyword=${encodeURIComponent(kw)}`,
+  },
+  {
+    id: 'panhub', name: 'PanHub 网盘搜索', mode: 'iframe',
+    home: 'https://panhub.shenzjd.com/',
+    url: kw => `https://panhub.shenzjd.com/?q=${encodeURIComponent(kw)}`,
+    note: '若弹出公告/加群窗口，点掉即可看到结果；「获取链接」需微信登录',
+  },
+  {
+    id: 'panyq', name: '盘友圈', mode: 'tab',
+    home: 'https://panyq.com/',
+    open: kw => `https://panyq.com/?kw=${encodeURIComponent(kw)}`,
+    note: '该站有验证码且禁止被嵌入。桌面端以侧边小窗打开,可贴在聚合页旁边;装了油猴脚本会自动填词搜索。手机端打开后粘贴关键词(点按钮自动复制),验证码点一下即可。',
+  },
+];
+
+// 网盘类型 -> 展示名与分组顺序
+const NETDISK = {
+  quark: '夸克网盘', aliyun: '阿里云盘', baidu: '百度网盘', xunlei: '迅雷云盘',
+  uc: 'UC网盘', '123': '123网盘', '115': '115网盘', tianyi: '天翼云盘',
+  pikpak: 'PikPak', magnet: '磁力链接', ed2k: '电驴', '189': '天翼云盘',
+};
+const NETDISK_ORDER = ['quark', 'aliyun', 'baidu', 'xunlei', 'uc', '123', '115', 'tianyi', '189', 'pikpak', 'magnet', 'ed2k'];
+
+const LS_SITES = 'agg.sites.v1', LS_HIST = 'agg.hist.v1', LS_CUSTOM = 'agg.custom.v1';
+let customSites = loadLS(LS_CUSTOM, []) || []; // 用户在页面里动态添加的站点
+
+// 自定义站点 -> 标准站点对象（iframe / tab 两种模式）
+function customToSite(c) {
+  const build = kw => c.url ? c.url.replace(/\{kw\}/gi, encodeURIComponent(kw)) : c.home;
+  if (c.mode === 'iframe') {
+    return { id: c.id, name: c.name, mode: 'iframe', home: c.home, url: build, custom: true };
+  }
+  return { id: c.id, name: c.name, mode: 'tab', home: c.home, open: build, custom: true,
+    note: '自定义站点：点按钮打开后关键词会自动复制到剪贴板，粘贴即可搜索。' };
+}
+
+function allSites() { return SITES.concat(customSites.map(customToSite)); }
+
+let enabled = loadLS(LS_SITES, null) || Object.fromEntries(allSites().map(s => [s.id, s.id !== 'panyq']));
+// 升级兼容:新加的内置站点若没有历史开关记录,默认启用(panyq 除外)
+allSites().forEach(s => { if (!(s.id in enabled)) enabled[s.id] = s.id !== 'panyq'; });
+let history = loadLS(LS_HIST, []) || [];
+let lastKw = '';
+let activeTab = null; // 手机端当前显示的源
+let panyqLocal = false; // 本地服务(panyq-server.py)是否在线
+
+const $ = sel => document.querySelector(sel);
+
+function loadLS(k, dft) { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : dft; } catch (e) { return dft; } }
+function saveLS(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) { } }
+function esc(s) { return String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
+
+// ===== 顶部：数据源开关 + 历史 =====
+function renderToggles() {
+  $('#toggles').innerHTML = allSites().map(s => `
+    <label class="chip ${enabled[s.id] ? 'on' : ''}" data-id="${s.id}">
+      <input type="checkbox" ${enabled[s.id] ? 'checked' : ''}>${esc(s.name)}
+    </label>`).join('') + `<button type="button" class="chip add" id="addSiteChip">＋ 添加站点</button>`;
+  $('#toggles').querySelectorAll('.chip[data-id]').forEach(el => {
+    el.addEventListener('change', e => {
+      enabled[el.dataset.id] = e.target.checked;
+      el.classList.toggle('on', e.target.checked);
+      saveLS(LS_SITES, enabled);
+      renderPanels();
+      if (lastKw) runSearch(lastKw, true);
+    });
+  });
+  $('#addSiteChip').addEventListener('click', openSiteModal);
+  const on = allSites().filter(s => enabled[s.id]).length;
+  const btn = $('#srcBtn');
+  if (btn) btn.textContent = `数据源 · ${on}`;
+}
+function renderHistory() {
+  const el = $('#hist');
+  el.innerHTML = history.map(k => `<span class="hist" data-k="${esc(k)}">${esc(k)}</span>`).join('');
+  $('#hist-label').style.display = history.length ? '' : 'none';
+  el.querySelectorAll('.hist').forEach(h => h.addEventListener('click', () => { $('#kw').value = h.dataset.k; runSearch(h.dataset.k); }));
+}
+function pushHistory(k) {
+  history = [k, ...history.filter(x => x !== k)].slice(0, 12);
+  saveLS(LS_HIST, history); renderHistory();
+}
+
+// ===== 面板骨架 =====
+function activeSites() { return allSites().filter(s => enabled[s.id]); }
+
+function renderPanels() {
+  const main = $('#panels');
+  main.innerHTML = '';
+  const sites = activeSites();
+  if (!sites.length) { main.innerHTML = '<div class="empty">请在顶部至少启用一个数据源</div>'; renderTabs(); return; }
+  for (const s of sites) main.appendChild(buildPanel(s));
+  renderTabs();
+  syncActiveTab();
+}
+
+// 手机端 Tab 栏（桌面端隐藏，见 CSS）
+function renderTabs() {
+  const wrap = $('#mtabs');
+  const sites = activeSites();
+  if (!sites.some(s => s.id === activeTab)) activeTab = sites.length ? sites[0].id : null;
+  wrap.innerHTML = sites.map(s => `<button class="mtab ${s.id === activeTab ? 'on' : ''}" data-t="${s.id}">${esc(s.name)}</button>`).join('');
+  wrap.hidden = sites.length < 2;
+  wrap.querySelectorAll('.mtab').forEach(b => b.addEventListener('click', () => { activeTab = b.dataset.t; syncActiveTab(); window.scrollTo(0, 0); }));
+}
+
+function syncActiveTab() {
+  document.querySelectorAll('#mtabs .mtab').forEach(b => b.classList.toggle('on', b.dataset.t === activeTab));
+  document.querySelectorAll('main .panel').forEach(p => p.classList.toggle('m-active', p.dataset.id === activeTab));
+}
+
+function buildPanel(s) {
+  const p = document.createElement('section');
+  p.className = 'panel' + (s.mode === 'tab' ? ' auto' : '');
+  p.dataset.id = s.id;
+
+  const head = document.createElement('div');
+  head.className = 'p-head';
+  head.innerHTML = `
+    <span class="p-name">${esc(s.name)}</span>
+    <span class="p-state" id="st-${s.id}">待搜索</span>
+    <a class="p-act" href="${esc(s.home)}" target="_blank" rel="noopener">新标签打开</a>
+    ${s.mode !== 'tab' ? `<button class="p-act" data-reload="${s.id}">重载</button>` : ''}`;
+  p.appendChild(head);
+
+  const body = document.createElement('div');
+  body.className = 'p-body';
+  body.id = `body-${s.id}`;
+  if (s.mode === 'api') body.innerHTML = `<div class="empty">输入关键词开始搜索</div>`;
+  if (s.mode === 'iframe') body.innerHTML = `<div class="empty">输入关键词后在此加载 ${esc(s.name)} 的搜索结果${s.note ? '<br><span style="font-size:12px">' + esc(s.note) + '</span>' : ''}</div>`;
+  if (s.mode === 'tab') {
+    const hint = (s.id === 'panyq' && panyqLocal)
+      ? '<span class="local-on"><b style="color:var(--ok)">● 本地服务已连接</b>:搜索时会自动查询盘友圈并直接显示结果。<br></span>'
+      : '';
+    body.innerHTML = `<div class="tabcard">${hint}${esc(s.note)}<div class="row">
+      <a class="btn primary" id="open-${s.id}" href="${esc(s.home)}" target="_blank" rel="noopener">${s.id === 'panyq' ? '搜索盘友圈' : '打开 ' + esc(s.name)}</a>
+      <button class="btn" id="copykw-${s.id}">复制关键词</button></div></div>`;
+  }
+  p.appendChild(body);
+
+  if (s.mode !== 'tab') {
+    head.querySelector('[data-reload]').addEventListener('click', () => { if (lastKw) runSearch(lastKw, true); });
+  } else {
+    body.querySelector(`#copykw-${s.id}`).addEventListener('click', () => copyText(lastKw || '', '已复制关键词，去新标签粘贴搜索'));
+    body.querySelector(`#open-${s.id}`).addEventListener('click', e => {
+      copyText(lastKw || '', '关键词已复制，粘贴到搜索框即可');
+      if (s.id !== 'panyq') return; // 自定义站点保持默认新标签行为
+      // 组合键/中键保留默认行为(新标签打开),普通点击走侧边小窗
+      if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+      e.preventDefault();
+      openPanyqWindow(e.currentTarget.href);
+    });
+  }
+  return p;
+}
+
+function setState(id, cls, text) {
+  const el = document.getElementById(`st-${id}`);
+  if (el) { el.className = 'p-state ' + cls; el.textContent = text; }
+}
+
+// ===== 搜索调度 =====
+let searchSeq = 0;
+async function runSearch(kw, isAuto) {
+  kw = (kw || '').trim();
+  if (!kw) { $('#kw').focus(); return; }
+  $('#srcPanel').classList.remove('open');
+  $('#srcBtn').classList.remove('open');
+  lastKw = kw;
+  $('#kw').value = kw;
+  if (!isAuto) pushHistory(kw);
+  const seq = ++searchSeq;
+
+  for (const s of activeSites()) {
+    if (s.mode === 'api') searchApi(s, kw, seq);
+    if (s.mode === 'iframe') {
+      setState(s.id, '', '加载中');
+      const body = document.getElementById(`body-${s.id}`);
+      const url = s.url(kw) + (s.url(kw).includes('?') ? '&' : '?') + '_r=' + Date.now();
+      body.innerHTML = `<iframe src="${esc(url)}" referrerpolicy="no-referrer"></iframe>`;
+      const f = body.querySelector('iframe');
+      f.addEventListener('load', () => setState(s.id, 'ok', '已加载'));
+    }
+    if (s.mode === 'tab') {
+      const a = document.getElementById(`open-${s.id}`);
+      if (a && s.open) a.href = s.open(kw);
+      setState(s.id, 'ok', '关键词已带上，点按钮打开');
+      if (s.id === 'panyq') searchPanyqLocal(s, kw, seq);
+    }
+  }
+}
+
+// ===== PanSou 原生接口渲染 =====
+const apiState = {}; // siteId -> { groups, total, filter }
+
+async function searchApi(site, kw, seq) {
+  const body = document.getElementById(`body-${site.id}`);
+  setState(site.id, '', '搜索中');
+  body.innerHTML = `<div class="loading">正在聚合各来源</div>`;
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 20000);
+  const t0 = Date.now();
+  try {
+    const res = await fetch(site.fetch(kw), { signal: ctrl.signal });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const j = await res.json();
+    if (seq !== searchSeq) return;
+    if (j.code !== 0) throw new Error(j.message || '接口返回异常');
+    const groups = j.data && j.data.merged_by_type ? j.data.merged_by_type : {};
+    const secs = ((Date.now() - t0) / 1000).toFixed(1);
+    const total = j.data && j.data.total ? j.data.total : countItems(groups);
+    apiState[site.id] = { groups, total, filter: 'all' };
+    renderApiPanel(site.id);
+    setState(site.id, 'ok', `共 ${total} 条 · ${secs}s`);
+  } catch (e) {
+    if (seq !== searchSeq) return;
+    setState(site.id, 'fail', '获取失败');
+    body.innerHTML = `<div class="err">
+      结果获取失败：${esc(e.name === 'AbortError' ? '请求超时' : e.message)}<br>
+      <span style="font-size:12px">可能是该站接口调整或网络受限，可点右上角「新标签打开」直接去站内搜索</span><br>
+      <button class="btn primary" style="margin-top:8px" onclick="runSearch(lastKw, 1)">重试</button>
+    </div>`;
+  } finally { clearTimeout(timer); }
+}
+
+function countItems(groups) { return Object.values(groups).reduce((n, arr) => n + (arr ? arr.length : 0), 0); }
+
+function apiTypes(groups) {
+  return Object.keys(groups)
+    .filter(k => groups[k] && groups[k].length)
+    .sort((a, b) => (NETDISK_ORDER.indexOf(a) + 1 || 99) - (NETDISK_ORDER.indexOf(b) + 1 || 99));
+}
+
+function renderApiPanel(siteId) {
+  const body = document.getElementById(`body-${siteId}`);
+  const st = apiState[siteId];
+  if (!st || !body) return;
+  const types = apiTypes(st.groups);
+  if (!types.length) { body.innerHTML = `<div class="empty">未找到相关资源</div>`; return; }
+  const chips = [`<span class="fchip ${st.filter === 'all' ? 'on' : ''}" data-f="all">全部<em>${st.total}</em></span>`]
+    .concat(types.map(t => `<span class="fchip ${st.filter === t ? 'on' : ''}" data-f="${esc(t)}">${esc(NETDISK[t] || t)}<em>${st.groups[t].length}</em></span>`))
+    .join('');
+  let html = `<div class="fbar">${chips}</div>`;
+  if (st.filter === 'all') {
+    for (const t of types) html += renderGroupBlock(t, st.groups[t]);
+  } else {
+    html += renderGroupBlock(st.filter, st.groups[st.filter] || []);
+  }
+  body.innerHTML = html;
+  body.querySelectorAll('.fchip').forEach(c => c.addEventListener('click', () => {
+    st.filter = c.dataset.f;
+    renderApiPanel(siteId);
+    body.scrollTop = 0;
+  }));
+  bindItemActions(body);
+}
+
+function renderGroupBlock(type, arr) {
+  const label = NETDISK[type] || type;
+  const items = dedupe(arr);
+  let html = `<div class="group"><div class="g-head"><span class="g-name">${esc(label)}</span><span class="g-count">${items.length} 条</span></div>`;
+  for (const it of items) html += renderItem(it);
+  return html + `</div>`;
+}
+
+function dedupe(arr) {
+  const seen = new Set(), out = [];
+  for (const it of arr) {
+    const k = (it.url || '') + '|' + (it.note || '');
+    if (!seen.has(k)) { seen.add(k); out.push(it); }
+  }
+  out.sort((a, b) => dtVal(b.datetime) - dtVal(a.datetime));
+  return out;
+}
+function dtVal(d) {
+  if (!d) return 0;
+  const t = Date.parse(d);
+  return (!t || new Date(t).getFullYear() < 1990) ? 0 : t;
+}
+function fmtDate(d) {
+  const v = dtVal(d);
+  if (!v) return '';
+  const dt = new Date(v);
+  return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`;
+}
+function fmtSource(s) { return s ? String(s).replace(/^(tg|plugin):/, '') : ''; }
+
+function renderItem(it) {
+  const url = it.url || '';
+  const pw = it.password || '';
+  const date = fmtDate(it.datetime);
+  const src = fmtSource(it.source);
+  return `<div class="item" data-url="${esc(url)}" data-pw="${esc(pw)}">
+    <div class="i-title">${esc(it.note || '无标题')}</div>
+    <div class="i-meta">
+      ${date ? `<span>${esc(date)}</span>` : ''}
+      ${src ? `<span class="badge">${esc(src)}</span>` : ''}
+      ${pw ? `<span class="pw">提取码 ${esc(pw)}</span>` : ''}
+    </div>
+    <div class="i-act">
+      <a class="btn primary" href="${esc(url)}" target="_blank" rel="noopener">打开链接</a>
+      <button class="btn" data-copy="${esc(url)}">复制链接</button>
+      ${pw ? `<button class="btn" data-copy="${esc(url)} 提取码:${esc(pw)}">复制链接+提取码</button>` : ''}
+    </div>
+  </div>`;
+}
+
+function bindItemActions(root) {
+  root.querySelectorAll('[data-copy]').forEach(b => b.addEventListener('click', () => copyText(b.dataset.copy)));
+}
+
+// ===== 盘友圈：本地服务优先，不可用则手动模式 =====
+async function searchPanyqLocal(site, kw, seq) {
+  if (!/^https?:/.test(location.protocol)) return;
+  setState(site.id, '', '本地服务查询中');
+  let j = null;
+  try {
+    const r = await fetch(`/api/panyq?kw=${encodeURIComponent(kw)}`, { signal: AbortSignal.timeout(40000) });
+    j = await r.json();
+  } catch (e) {
+    setState(site.id, 'ok', '关键词已带上，点「搜索盘友圈」打开');
+    return;
+  }
+  if (seq !== searchSeq) return;
+  const body = document.getElementById(`body-${site.id}`);
+  if (!body) return;
+  if (j && j.ok) {
+    setState(site.id, 'ok', `共 ${j.total} 条 · 本地服务`);
+    body.innerHTML = renderPanyqResults(j);
+    bindItemActions(body);
+  } else if (j && j.reason === 'captcha') {
+    setState(site.id, 'fail', '需要过验证码');
+    body.innerHTML = `<div class="tabcard">盘友圈风控这次要求验证码,服务器过不了。<br>点「打开盘友圈」搜一次、点掉验证码后,再点「重试」即可继续使用本地服务。<div class="row">
+      <a class="btn primary" href="${esc(site.open(kw))}" target="_blank" rel="noopener">打开盘友圈(带关键词)</a>
+      <button class="btn" data-copy="${esc(kw)}">复制关键词</button>
+      <button class="btn" onclick="runSearch(lastKw, 1)">重试</button></div></div>`;
+    bindItemActions(body);
+  } else {
+    setState(site.id, 'fail', '查询失败');
+    body.innerHTML = `<div class="tabcard">本地服务查询失败:${esc((j && j.message) || '未知错误')}<div class="row">
+      <a class="btn primary" href="${esc(site.open(kw))}" target="_blank" rel="noopener">打开盘友圈(带关键词)</a>
+      <button class="btn" onclick="runSearch(lastKw, 1)">重试</button></div></div>`;
+  }
+}
+
+function renderPanyqResults(j) {
+  const head = `<div class="fbar"><span class="g-name" style="align-self:center">盘友圈结果</span><span class="g-count">${j.total} 条</span>${j.searchUrl ? `<a class="p-act" style="margin-left:auto" href="${esc(j.searchUrl)}" target="_blank" rel="noopener">在盘友圈打开</a>` : ''}</div>`;
+  if (!j.hits.length) return head + '<div class="empty">未找到相关资源</div>';
+  let html = head + '<div class="group">';
+  for (const h of j.hits) {
+    html += `<div class="item">
+      <div class="i-title">${esc(h.title || '无标题')}</div>
+      <div class="i-meta">${h.size ? `<span class="badge">${esc(h.size)}</span>` : ''}<span class="badge">盘友圈</span></div>
+      <div class="i-act"><a class="btn primary" href="${esc(h.url)}" target="_blank" rel="noopener">打开链接</a><button class="btn" data-copy="${esc(h.url)}">复制链接</button></div>
+    </div>`;
+  }
+  return html + '</div><div style="height:8px"></div>';
+}
+
+// ===== 工具 =====
+let toastTimer = null;
+function toast(msg) {
+  const t = $('#toast');
+  t.textContent = msg; t.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => t.classList.remove('show'), 1600);
+}
+async function copyText(text, okMsg) {
+  if (!text) return;
+  try { await navigator.clipboard.writeText(text); toast(okMsg || '已复制'); return; } catch (e) { }
+  try {
+    const ta = document.createElement('textarea');
+    ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
+    document.body.appendChild(ta); ta.select();
+    document.execCommand('copy'); ta.remove(); toast(okMsg || '已复制');
+  } catch (e) { toast('复制失败，请手动复制'); }
+}
+
+// 盘友圈侧边小窗:固定尺寸、贴近屏幕右侧,多次点击复用同一个窗口
+function openPanyqWindow(url) {
+  const w = Math.min(480, Math.round(screen.availWidth / 2));
+  const h = Math.min(920, Math.max(400, screen.availHeight - 80));
+  const left = Math.max(0, screen.availWidth - w - 24);
+  const win = window.open(url, 'panyq_panel',
+    'popup=yes,width=' + w + ',height=' + h + ',left=' + left + ',top=48');
+  if (!win) {
+    const fallback = window.open(url, '_blank');
+    if (!fallback) toast('小窗被浏览器拦截，请允许本页弹出窗口');
+  }
+}
+
+// ===== 动态添加站点(存 localStorage,刷新不丢) =====
+function openSiteModal() {
+  $('#msName').value = '';
+  $('#msUrl').value = '';
+  $('#msMode').value = 'iframe';
+  renderCustomList();
+  $('#siteModal').hidden = false;
+  $('#msName').focus();
+}
+
+function closeSiteModal() { $('#siteModal').hidden = true; }
+
+function renderCustomList() {
+  const el = $('#msList');
+  if (!customSites.length) { el.innerHTML = ''; return; }
+  el.innerHTML = '<div style="margin-top:14px;color:var(--muted);font-size:12px">已添加的站点（保存在本机浏览器里）</div>' +
+    customSites.map(c => `
+      <div class="crow">
+        <span class="nm">${esc(c.name)}</span>
+        <span class="mode">${c.mode === 'iframe' ? '嵌入' : '新窗口'}</span>
+        <button class="btn" type="button" data-del="${esc(c.id)}">删除</button>
+      </div>`).join('');
+  el.querySelectorAll('[data-del]').forEach(b => b.addEventListener('click', () => {
+    const c = customSites.find(x => x.id === b.dataset.del);
+    if (!c || !confirm('删除站点「' + c.name + '」？')) return;
+    customSites = customSites.filter(x => x.id !== c.id);
+    saveLS(LS_CUSTOM, customSites);
+    delete enabled[c.id];
+    saveLS(LS_SITES, enabled);
+    renderCustomList();
+    renderToggles();
+    renderPanels();
+    toast('已删除：' + c.name);
+  }));
+}
+
+function saveCustomSite() {
+  const name = $('#msName').value.trim();
+  const url = $('#msUrl').value.trim();
+  const mode = $('#msMode').value;
+  if (!name) { toast('请填写站点名称'); return; }
+  if (!/^https?:\/\//i.test(url)) { toast('地址需以 http(s):// 开头'); return; }
+  if (mode === 'iframe' && !/\{kw\}/i.test(url)) { toast('嵌入模式需要在地址里用 {kw} 占位'); return; }
+  const c = { id: 'c-' + Date.now().toString(36), name, url, mode, home: (url.split('?')[0] || url) };
+  customSites.push(c);
+  saveLS(LS_CUSTOM, customSites);
+  enabled[c.id] = true;
+  saveLS(LS_SITES, enabled);
+  closeSiteModal();
+  renderToggles();
+  renderPanels();
+  toast('已添加：' + name);
+  if (lastKw) runSearch(lastKw, true);
+}
+
+// ===== 启动 =====
+$('#go').addEventListener('click', () => runSearch($('#kw').value));
+$('#kw').addEventListener('keydown', e => { if (e.key === 'Enter') runSearch($('#kw').value); });
+
+// 手机端更短的占位文案，避免截断
+function tunePlaceholder() {
+  $('#kw').placeholder = window.matchMedia('(max-width: 768px)').matches
+    ? '输入关键词，多站同搜（回车）'
+    : '输入一个关键词，所有网盘搜索引擎同时开搜（回车）';
+}
+window.addEventListener('resize', tunePlaceholder);
+tunePlaceholder();
+
+// 检测本地服务是否在线(通过 panyq-server.py 访问时,盘友圈可原生显示结果)
+(async () => {
+  if (!/^https?:/.test(location.protocol)) return;
+  try {
+    const r = await fetch('/api/panyq?ping=1', { signal: AbortSignal.timeout(3000) });
+    const j = await r.json();
+    if (j && j.service === 'panyq-local') {
+      panyqLocal = true;
+      const card = document.querySelector('#body-panyq .tabcard');
+      if (card && !card.querySelector('.local-on')) {
+        card.insertAdjacentHTML('afterbegin', '<span class="local-on"><b style="color:var(--ok)">● 本地服务已连接</b>:搜索时会自动查询盘友圈并直接显示结果。<br></span>');
+      }
+    }
+  } catch (e) { }
+})();
+
+// 手机端：数据源下拉面板
+$('#srcBtn').addEventListener('click', e => {
+  e.stopPropagation();
+  $('#srcPanel').classList.toggle('open');
+  $('#srcBtn').classList.toggle('open');
+});
+document.addEventListener('click', e => {
+  if (!$('#srcPanel').contains(e.target)) {
+    $('#srcPanel').classList.remove('open');
+    $('#srcBtn').classList.remove('open');
+  }
+});
+
+// 添加站点弹窗
+$('#msSave').addEventListener('click', saveCustomSite);
+$('#msCancel').addEventListener('click', closeSiteModal);
+$('#msTest').addEventListener('click', () => {
+  const url = $('#msUrl').value.trim();
+  if (!/^https?:\/\//i.test(url)) { toast('先填写搜索地址'); return; }
+  window.open(url.replace(/\{kw\}/gi, encodeURIComponent('测试')), '_blank');
+});
+$('#siteModal').addEventListener('click', e => { if (e.target === e.currentTarget) closeSiteModal(); });
+
+// PWA:仅 https / localhost 环境注册离线壳(本地 file:// 打开时自动跳过)
+if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('./sw.js').catch(() => { });
+  });
+}
+
+renderToggles();
+renderHistory();
+renderPanels();
+const initKw = new URLSearchParams(location.search).get('kw');
+if (initKw) runSearch(initKw, true);
+</script>
+</body>
+</html>

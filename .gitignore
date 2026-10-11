@@ -1,0 +1,10 @@
+# 本地开发辅助(不随站点发布)
+panyq-server.py
+panyq-auto-search.user.js
+vibe_images/
+dist/
+聚合盘搜-部署包.zip
+
+# 平台生成文件
+.聚合盘搜.qoder.site
+.DS_Store

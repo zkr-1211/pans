@@ -1,0 +1,16 @@
+{
+  "name": "聚合盘搜 - 一次输入，多站同搜",
+  "short_name": "聚合盘搜",
+  "description": "输入一个关键词，多个网盘搜索引擎同时开搜：盘搜 / 下歌吧 / 松果盘搜 / PanHub / 盘友圈",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#f3f4f6",
+  "theme_color": "#2563eb",
+  "icons": [
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
