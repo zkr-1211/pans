@@ -102,6 +102,15 @@
   .modal .crow .nm { flex: 1; word-break: break-all; }
   .modal .crow .mode { color: var(--muted); font-size: 12px; white-space: nowrap; }
 
+  /* 全屏浏览层:不跳转、不堆层级,一键返回 */
+  #fs { position: fixed; inset: 0; z-index: 300; background: #fff; display: flex; flex-direction: column; }
+  #fs[hidden] { display: none; }
+  #fs .fs-bar { display: flex; align-items: center; gap: 10px; padding: 8px 12px; padding-top: calc(8px + env(safe-area-inset-top, 0px)); border-bottom: 1px solid var(--line); background: #fafafa; }
+  #fs .fs-bar .back { font-size: 14px; font-weight: 600; color: var(--accent); background: none; border: 0; cursor: pointer; padding: 6px 6px; }
+  #fs .fs-title { flex: 1; font-size: 13px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #fs .fs-body { flex: 1; min-height: 0; padding-bottom: env(safe-area-inset-bottom, 0px); }
+  #fs .fs-body iframe { width: 100%; height: 100%; border: 0; display: block; }
+
   #mtabs { display: none; }
 
   /* ===== 移动端:独立布局(数据源收起为下拉 + Tab 切换单面板)=====
@@ -195,6 +204,14 @@
     </div>
     <div id="msList"></div>
   </div>
+</div>
+<div id="fs" hidden>
+  <div class="fs-bar">
+    <button class="back" id="fsBack" type="button">← 返回聚合页</button>
+    <span class="fs-title" id="fsTitle"></span>
+    <a class="p-act" id="fsTab" target="_blank" rel="noopener">新标签打开</a>
+  </div>
+  <div class="fs-body" id="fsBody"></div>
 </div>
 <div id="toast"></div>
 
@@ -340,6 +357,7 @@ function buildPanel(s) {
   head.innerHTML = `
     <span class="p-name">${esc(s.name)}</span>
     <span class="p-state" id="st-${s.id}">待搜索</span>
+    ${s.mode === 'iframe' ? `<button class="p-act" data-fs="${s.id}">全屏浏览</button>` : ''}
     <a class="p-act" href="${esc(s.home)}" target="_blank" rel="noopener">新标签打开</a>
     ${s.mode !== 'tab' ? `<button class="p-act" data-reload="${s.id}">重载</button>` : ''}`;
   p.appendChild(head);
@@ -361,6 +379,8 @@ function buildPanel(s) {
 
   if (s.mode !== 'tab') {
     head.querySelector('[data-reload]').addEventListener('click', () => { if (lastKw) runSearch(lastKw, true); });
+    const fsBtn = head.querySelector('[data-fs]');
+    if (fsBtn) fsBtn.addEventListener('click', () => expandSite(s.id));
   } else {
     body.querySelector(`#copykw-${s.id}`).addEventListener('click', () => copyText(lastKw || '', '已复制关键词，去新标签粘贴搜索'));
     body.querySelector(`#open-${s.id}`).addEventListener('click', e => {
@@ -597,8 +617,10 @@ async function copyText(text, okMsg) {
   } catch (e) { toast('复制失败，请手动复制'); }
 }
 
-// 盘友圈侧边小窗:固定尺寸、贴近屏幕右侧,多次点击复用同一个窗口
+// 盘友圈侧边小窗:PWA(添加到桌面)环境下改用平台最兼容的打开方式,避免堆叠层级
 function openPanyqWindow(url) {
+  const isPWA = (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) || window.navigator.standalone === true;
+  if (isPWA) { window.open(url, '_blank'); return; }
   const w = Math.min(480, Math.round(screen.availWidth / 2));
   const h = Math.min(920, Math.max(400, screen.availHeight - 80));
   const left = Math.max(0, screen.availWidth - w - 24);
@@ -609,6 +631,33 @@ function openPanyqWindow(url) {
     if (!fallback) toast('小窗被浏览器拦截，请允许本页弹出窗口');
   }
 }
+
+// ===== 全屏浏览:把面板 iframe 挪进全屏层,不跳转、不堆层级,一键返回(保留页面状态)=====
+let fsState = null;
+function expandSite(siteId) {
+  const holder = document.getElementById(`body-${siteId}`);
+  const iframe = holder && holder.querySelector('iframe');
+  if (!iframe) { toast('该面板暂无可全屏的内容'); return; }
+  const site = allSites().find(x => x.id === siteId);
+  fsState = { holder, iframe };
+  $('#fsTitle').textContent = (site ? site.name : '') + (lastKw ? ' · ' + lastKw : '');
+  $('#fsTab').href = iframe.src;
+  $('#fsBody').appendChild(iframe);
+  $('#fs').hidden = false;
+  try { history.pushState({ aggFs: 1 }, ''); } catch (e) { }
+}
+function closeFullscreen() {
+  if (!fsState) return;
+  const { holder, iframe } = fsState;
+  fsState = null;
+  $('#fs').hidden = true;
+  if (holder && holder.isConnected) holder.appendChild(iframe); else iframe.remove();
+}
+function fsBack() {
+  if (history.state && history.state.aggFs) history.back();
+  else closeFullscreen();
+}
+window.addEventListener('popstate', () => { if (fsState) closeFullscreen(); });
 
 // ===== 动态添加站点(存 localStorage,刷新不丢) =====
 function openSiteModal() {
@@ -717,6 +766,9 @@ $('#msTest').addEventListener('click', () => {
   window.open(url.replace(/\{kw\}/gi, encodeURIComponent('测试')), '_blank');
 });
 $('#siteModal').addEventListener('click', e => { if (e.target === e.currentTarget) closeSiteModal(); });
+
+// 全屏浏览层
+$('#fsBack').addEventListener('click', fsBack);
 
 // PWA:仅 https / localhost 环境注册离线壳(本地 file:// 打开时自动跳过)
 if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) {
